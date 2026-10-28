@@ -1,14 +1,37 @@
+
 import streamlit as st
 import joblib
 import re
-import html
+import secrets
+import time
 
 st.set_page_config(
-    page_title="SMS Shield | Spam Detector",
+    page_title="SMS Shield",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# ---------------- SESSION STATE ----------------
+
+defaults = {
+    "page": "auth",
+    "auth_mode": "Sign In",
+    "users": {},
+    "pending_user": None,
+    "demo_otp": None,
+    "otp_expiry": 0,
+    "user": None,
+    "sms_input": "",
+    "prediction": None
+}
+
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# ---------------- MODEL LOADING ----------------
 
 @st.cache_resource
 def load_models():
@@ -16,43 +39,38 @@ def load_models():
     vectorizer = joblib.load("tfidf_vectorizer.pkl")
     return model, vectorizer
 
+
 try:
     model, vectorizer = load_models()
-except Exception as e:
-    st.error("Unable to load the trained model. Please check your model files.")
+except Exception:
+    st.error(
+        "Model files could not be loaded. "
+        "Check that sms_spam_model.pkl and "
+        "tfidf_vectorizer.pkl exist in your repository."
+    )
     st.stop()
+
+
+# ---------------- RESPONSIVE DESIGN ----------------
 
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-:root {
-    --primary: #635bff;
-    --secondary: #8b5cf6;
-    --text: #172033;
-    --muted: #64748b;
-    --surface: #ffffff;
-    --border: #e5e7eb;
-}
-
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
+* {
+    font-family: Inter, sans-serif;
 }
 
 .stApp {
     background:
         radial-gradient(ellipse at 5% 0%, #ede9fe 0%, transparent 35%),
-        radial-gradient(ellipse at 95% 15%, #dbeafe 0%, transparent 30%),
+        radial-gradient(ellipse at 95% 15%, #dbeafe 0%, transparent 35%),
         #f8fafc;
 }
 
 .block-container {
-    max-width: 1100px;
-    padding: 1.5rem 2rem 3rem 2rem;
-}
-
-header[data-testid="stHeader"] {
-    background: transparent;
+    max-width: 1050px;
+    padding: 1.5rem 1.5rem 3rem;
 }
 
 #MainMenu, footer {
@@ -63,152 +81,109 @@ header[data-testid="stHeader"] {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin: 5px 0 35px 0;
+    margin: 8px 0 30px;
 }
 
 .brand-icon {
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    background: linear-gradient(135deg, #635bff, #a855f7);
+    color: white;
     width: 48px;
     height: 48px;
     border-radius: 15px;
-    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 25px;
-    background: linear-gradient(135deg, #635bff, #a855f7);
-    box-shadow: 0 8px 20px #635bff35;
+    box-shadow: 0 8px 20px #635bff30;
 }
 
 .brand-name {
-    font-size: 22px;
+    font-size: 23px;
     font-weight: 800;
     color: #172033;
-    letter-spacing: -0.8px;
 }
 
 .brand-sub {
     font-size: 12px;
     color: #64748b;
-    margin-top: 3px;
 }
 
-.status-pill {
-    display: inline-block;
-    padding: 7px 12px;
-    border: 1px solid #bbf7d0;
-    background: #f0fdf4;
-    color: #15803d;
-    border-radius: 30px;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.hero {
-    text-align: center;
-    padding: 15px 10px 25px 10px;
-}
-
-.eyebrow {
-    color: #635bff;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    font-size: 11px;
-    margin-bottom: 15px;
-}
-
-.hero h1 {
-    font-size: clamp(32px, 5vw, 53px);
-    line-height: 1.13;
-    letter-spacing: -2px;
-    font-weight: 800;
-    color: #172033;
-    margin: 0 0 17px 0;
-}
-
-.gradient-text {
-    background: linear-gradient(90deg, #635bff, #a855f7);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-
-.hero p {
-    max-width: 570px;
-    margin: auto;
-    color: #64748b;
-    font-size: 15px;
-    line-height: 1.8;
-}
-
-.feature-row {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin: 22px 0 28px 0;
-}
-
-.feature-chip {
-    padding: 9px 13px;
-    border: 1px solid #e5e7eb;
-    background: #ffffffc9;
-    border-radius: 30px;
-    color: #475569;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.main-card {
+.auth-card {
     background: white;
     border: 1px solid #e5e7eb;
-    border-radius: 22px;
-    padding: 26px;
-    box-shadow: 0 15px 45px #1e293b0b;
+    border-radius: 24px;
+    padding: 30px;
+    box-shadow: 0 20px 60px #1720330d;
 }
 
-.section-label {
+.auth-heading {
     color: #172033;
-    font-size: 18px;
+    font-size: 32px;
     font-weight: 800;
-    margin-bottom: 7px;
+    letter-spacing: -1px;
+    margin-bottom: 8px;
 }
 
-.section-help {
+.auth-subtitle {
     color: #64748b;
-    font-size: 13px;
-    line-height: 1.6;
-    margin-bottom: 20px;
-}
-
-div[data-testid="stTextArea"] textarea {
-    border: 1px solid #dbe2ef;
-    border-radius: 13px;
-    background: #fbfcff;
-    color: #172033;
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1.7;
-    padding: 15px;
-    min-height: 155px;
+    margin-bottom: 22px;
 }
 
-div[data-testid="stTextArea"] textarea:focus {
-    border-color: #635bff;
-    box-shadow: 0 0 0 3px #635bff18;
+.hero-panel {
+    background: linear-gradient(145deg, #5145ed, #8b5cf6 60%, #a855f7);
+    border-radius: 24px;
+    padding: 38px 30px;
+    color: white;
+    min-height: 460px;
+}
+
+.hero-panel h1 {
+    font-size: clamp(32px, 4vw, 47px);
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -1.5px;
+    color: white;
+}
+
+.hero-panel p {
+    color: #f0edff;
+    font-size: 14px;
+    line-height: 1.9;
+}
+
+.hero-badge {
+    background: #ffffff20;
+    border: 1px solid #ffffff35;
+    padding: 8px 12px;
+    border-radius: 25px;
+    display: inline-block;
+    font-size: 12px;
+    margin-bottom: 24px;
+}
+
+.hero-feature {
+    margin-top: 25px;
+    padding: 13px;
+    border-radius: 12px;
+    background: #ffffff15;
+    font-size: 13px;
+    margin-bottom: 10px;
 }
 
 .stButton > button {
-    border-radius: 12px;
     min-height: 44px;
+    border-radius: 12px;
     font-weight: 700;
     border: 1px solid #e2e8f0;
-    transition: all 0.2s ease;
+    transition: 0.2s ease;
 }
 
 .stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #635bff, #8055f6);
     color: white;
     border: none;
-    box-shadow: 0 5px 15px #635bff30;
 }
 
 .stButton > button:hover {
@@ -216,19 +191,39 @@ div[data-testid="stTextArea"] textarea:focus {
     transform: translateY(-1px);
 }
 
+div[data-testid="stTextInput"] input,
+div[data-testid="stTextArea"] textarea {
+    border-radius: 11px;
+    border-color: #dbe2ef;
+    background: #fbfcff;
+}
+
+div[data-testid="stTextArea"] textarea {
+    min-height: 140px;
+}
+
+.section-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 20px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 12px 35px #17203308;
+}
+
 .result-card {
-    border-radius: 17px;
-    padding: 23px;
-    margin-top: 20px;
+    padding: 22px;
+    border-radius: 16px;
+    margin-top: 15px;
     border: 1px solid;
 }
 
-.result-spam {
+.spam {
     background: #fff1f2;
     border-color: #fecdd3;
 }
 
-.result-safe {
+.safe {
     background: #f0fdf4;
     border-color: #bbf7d0;
 }
@@ -239,74 +234,9 @@ div[data-testid="stTextArea"] textarea:focus {
     margin: 8px 0;
 }
 
-.result-description {
+.muted {
+    color: #64748b;
     font-size: 13px;
-    line-height: 1.7;
-    color: #475569;
-}
-
-.result-icon {
-    font-size: 30px;
-}
-
-.confidence-track {
-    background: #e2e8f0;
-    border-radius: 20px;
-    height: 8px;
-    overflow: hidden;
-    margin: 12px 0;
-}
-
-.confidence-fill {
-    height: 8px;
-    border-radius: 20px;
-    background: linear-gradient(90deg, #635bff, #a855f7);
-}
-
-.metric-card {
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 15px;
-    padding: 16px;
-    margin-top: 15px;
-}
-
-.metric-label {
-    color: #64748b;
-    font-size: 12px;
-    margin-bottom: 7px;
-}
-
-.metric-value {
-    color: #172033;
-    font-size: 22px;
-    font-weight: 800;
-    overflow-wrap: anywhere;
-}
-
-.info-card {
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 17px;
-    padding: 20px;
-    height: 100%;
-}
-
-.info-icon {
-    font-size: 25px;
-    margin-bottom: 12px;
-}
-
-.info-title {
-    color: #172033;
-    font-size: 15px;
-    font-weight: 800;
-    margin-bottom: 7px;
-}
-
-.info-text {
-    color: #64748b;
-    font-size: 12px;
     line-height: 1.8;
 }
 
@@ -314,52 +244,30 @@ div[data-testid="stTextArea"] textarea:focus {
     text-align: center;
     color: #64748b;
     font-size: 12px;
-    padding: 28px 10px 10px 10px;
-    line-height: 1.8;
+    padding: 25px 0;
 }
 
 @media (max-width: 768px) {
     .block-container {
-        padding: 1rem 1rem 2rem 1rem;
+        padding: 1rem 1rem 2rem;
     }
 
-    .brand {
-        margin-bottom: 25px;
+    .auth-card {
+        padding: 20px 16px;
+    }
+
+    .auth-heading {
+        font-size: 28px;
+    }
+
+    .hero-panel {
+        min-height: auto;
+        padding: 25px 20px;
+        margin-bottom: 20px;
     }
 
     .brand-name {
-        font-size: 19px;
-    }
-
-    .hero {
-        padding: 5px 0 15px 0;
-    }
-
-    .hero h1 {
-        font-size: 35px;
-        letter-spacing: -1.2px;
-    }
-
-    .hero p {
-        font-size: 13px;
-    }
-
-    .main-card {
-        padding: 18px 14px;
-        border-radius: 17px;
-    }
-
-    .feature-row {
-        gap: 7px;
-    }
-
-    .feature-chip {
-        font-size: 11px;
-        padding: 8px 10px;
-    }
-
-    .result-title {
-        font-size: 21px;
+        font-size: 20px;
     }
 
     .stButton > button {
@@ -368,142 +276,367 @@ div[data-testid="stTextArea"] textarea:focus {
 }
 
 @media (max-width: 420px) {
-    .hero h1 {
-        font-size: 30px;
+    .auth-card {
+        padding: 17px 12px;
+        border-radius: 17px;
     }
 
-    .brand-icon {
-        width: 42px;
-        height: 42px;
-        font-size: 21px;
+    .hero-panel {
+        border-radius: 17px;
+        padding: 22px 16px;
     }
 
-    .main-card {
-        padding: 15px 11px;
+    .hero-panel h1 {
+        font-size: 31px;
     }
 }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ---------------- BRAND ----------------
 
 st.markdown("""
 <div class="brand">
     <div class="brand-icon">🛡️</div>
     <div>
         <div class="brand-name">SMS Shield</div>
-        <div class="brand-sub">Smart message protection</div>
+        <div class="brand-sub">Smart Message Protection</div>
     </div>
-</div>
-
-<div class="hero">
-    <div class="eyebrow">AI-powered message security</div>
-    <h1>Stay safe from<br><span class="gradient-text">SMS scams.</span></h1>
-    <p>
-        Check suspicious text messages in seconds.
-        Our machine learning model helps you identify spam
-        and keep unwanted messages at a distance.
-    </p>
-</div>
-
-<div class="feature-row">
-    <div class="feature-chip">🤖 Machine Learning</div>
-    <div class="feature-chip">⚡ Instant Analysis</div>
-    <div class="feature-chip">📱 Mobile Friendly</div>
-    <div class="feature-chip">🔐 Privacy Focused</div>
 </div>
 """, unsafe_allow_html=True)
 
-left_space, center, right_space = st.columns([0.5, 8, 0.5])
 
-with center:
-    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+# ---------------- DEMO OTP HELPERS ----------------
 
-    st.markdown('<div class="section-label">✉️ Analyze a message</div>',
-                unsafe_allow_html=True)
+def generate_demo_otp():
+    st.session_state.demo_otp = f"{secrets.randbelow(1000000):06d}"
+    st.session_state.otp_expiry = time.time() + 300
 
-    st.markdown(
-        '<div class="section-help">Paste an SMS below, or try one of the examples to see how the detector works.</div>',
-        unsafe_allow_html=True
-    )
 
-    examples = {
-        "🎁 Prize message": "Congratulations! You have won a free prize. Click here to claim your reward now!",
-        "🏦 Bank alert": "URGENT! Your bank account will be blocked. Verify your details immediately.",
-        "👋 Normal message": "Hey, are we still meeting at college tomorrow? Let me know."
-    }
+def start_demo_verification(user_data):
+    st.session_state.pending_user = user_data
+    generate_demo_otp()
+    st.session_state.page = "verify"
+    st.rerun()
 
-    if "sms_input" not in st.session_state:
-        st.session_state.sms_input = ""
 
-    st.markdown("**Try a sample message**")
+def return_to_auth():
+    st.session_state.page = "auth"
+    st.session_state.pending_user = None
+    st.session_state.demo_otp = None
+    st.session_state.auth_mode = "Sign In"
+    st.rerun()
 
-    sample_cols = st.columns(3)
 
-    for i, (label, message) in enumerate(examples.items()):
-        with sample_cols[i]:
-            if st.button(label, key=f"sample_{i}", use_container_width=True):
-                st.session_state.sms_input = message
-                st.session_state.pop("prediction_result", None)
+# ---------------- AUTHENTICATION PAGE ----------------
+
+if st.session_state.page == "auth":
+
+    left, right = st.columns([1.05, 1], gap="large")
+
+    with left:
+        st.markdown("""
+        <div class="hero-panel">
+            <div class="hero-badge">✦ AI-Powered Security</div>
+            <h1>Your messages.<br>Your safety.<br>Your peace of mind.</h1>
+            <p>
+                Identify suspicious SMS messages with machine learning.
+                Check messages before you trust unfamiliar links,
+                offers, and requests.
+            </p>
+            <div class="hero-feature">🛡️ &nbsp; Intelligent spam detection</div>
+            <div class="hero-feature">⚡ &nbsp; Instant message analysis</div>
+            <div class="hero-feature">📱 &nbsp; Designed for every screen</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div class="auth-heading">Welcome to SMS Shield</div>',
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            '<div class="auth-subtitle">Sign in or create an account to access your spam detection dashboard.</div>',
+            unsafe_allow_html=True
+        )
+
+        mode = st.radio(
+            "Choose an option",
+            ["Sign In", "Create Account"],
+            horizontal=True,
+            key="auth_mode",
+            label_visibility="collapsed"
+        )
+
+        if mode == "Create Account":
+            st.markdown("#### Create your account")
+
+            full_name = st.text_input(
+                "Full name",
+                placeholder="Enter your name",
+                key="signup_name"
+            )
+
+            email = st.text_input(
+                "Email address",
+                placeholder="you@example.com",
+                key="signup_email"
+            ).strip().lower()
+
+            phone = st.text_input(
+                "Phone number",
+                placeholder="Enter your phone number",
+                key="signup_phone"
+            ).strip()
+
+            if st.button(
+                "Create account →",
+                type="primary",
+                use_container_width=True
+            ):
+                if not full_name.strip():
+                    st.error("Please enter your full name.")
+                elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                    st.error("Please enter a valid email address.")
+                elif not re.fullmatch(r"\+?[0-9\s()-]{7,20}", phone):
+                    st.error("Please enter a valid phone number.")
+                elif email in st.session_state.users:
+                    st.error("This email already has a demo account. Please sign in.")
+                else:
+                    user_data = {
+                        "name": full_name.strip(),
+                        "email": email,
+                        "phone": phone
+                    }
+                    start_demo_verification(user_data)
+
+        else:
+            st.markdown("#### Sign in to your account")
+
+            email = st.text_input(
+                "Email address",
+                placeholder="you@example.com",
+                key="signin_email"
+            ).strip().lower()
+
+            if st.button(
+                "Continue with demo OTP →",
+                type="primary",
+                use_container_width=True
+            ):
+                if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                    st.error("Please enter a valid email address.")
+                elif email not in st.session_state.users:
+                    st.error("No demo account found. Please create an account first.")
+                else:
+                    start_demo_verification(
+                        st.session_state.users[email]
+                    )
+
+            st.markdown(
+                '<div class="muted">Demo sign-in uses a simulated OTP. No real email or SMS is sent.</div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ---------------- OTP VERIFICATION PAGE ----------------
+
+elif st.session_state.page == "verify":
+
+    pending = st.session_state.pending_user
+
+    if not pending:
+        return_to_auth()
+
+    left, right = st.columns([1, 1], gap="large")
+
+    with left:
+        st.markdown("""
+        <div class="hero-panel">
+            <div class="hero-badge">🔐 Demo Verification</div>
+            <h1>One more step<br>to get started.</h1>
+            <p>
+                Verify your demo account using the simulated six-digit code.
+                In this college-project version, the code appears on this page
+                instead of being sent by email or SMS.
+            </p>
+            <div class="hero-feature">✉️ Email field included</div>
+            <div class="hero-feature">📱 Phone field included</div>
+            <div class="hero-feature">🧪 Demonstration only</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div class="auth-heading">Verify your account</div>',
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            f'<div class="auth-subtitle">Hello {pending["name"]}! Enter the demo code shown below.</div>',
+            unsafe_allow_html=True
+        )
+
+        st.info(
+            f"DEMO OTP: {st.session_state.demo_otp}\n\n"
+            "This code is simulated. No message was sent."
+        )
+
+        otp_input = st.text_input(
+            "Six-digit verification code",
+            max_chars=6,
+            placeholder="Enter demo OTP"
+        ).strip()
+
+        if st.button(
+            "Verify & Continue →",
+            type="primary",
+            use_container_width=True
+        ):
+            if time.time() > st.session_state.otp_expiry:
+                st.error("This demo code has expired. Generate a new one.")
+            elif otp_input != st.session_state.demo_otp:
+                st.error("Incorrect code. Please try again.")
+            else:
+                email = pending["email"]
+                st.session_state.users[email] = pending
+                st.session_state.user = pending
+                st.session_state.page = "dashboard"
+                st.session_state.pending_user = None
+                st.session_state.demo_otp = None
                 st.rerun()
 
-    sms = st.text_area(
-        "Your SMS message",
-        key="sms_input",
-        placeholder="Example: Congratulations! You have won a free gift...",
-        height=155,
-        max_chars=5000,
-        label_visibility="collapsed"
-    )
+        col1, col2 = st.columns(2)
 
-    word_count = len(re.findall(r"\b[\w']+\b", sms))
-    char_count = len(sms)
+        with col1:
+            if st.button("Resend demo OTP", use_container_width=True):
+                generate_demo_otp()
+                st.rerun()
 
-    metric1, metric2 = st.columns(2)
+        with col2:
+            if st.button("Back to sign in", use_container_width=True):
+                return_to_auth()
 
-    with metric1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Characters</div>
-            <div class="metric-value">{char_count}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with metric2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Words</div>
-            <div class="metric-value">{word_count}</div>
-        </div>
-        """, unsafe_allow_html=True)
+
+# ---------------- PROTECTED DASHBOARD ----------------
+
+elif st.session_state.page == "dashboard":
+
+    user = st.session_state.user
+
+    if not user:
+        st.session_state.page = "auth"
+        st.rerun()
+
+    header1, header2 = st.columns([3, 1])
+
+    with header1:
+        st.markdown(
+            f"## Welcome, {user['name']} 👋"
+        )
+        st.markdown(
+            '<div class="muted">Your personal SMS spam detection dashboard</div>',
+            unsafe_allow_html=True
+        )
+
+    with header2:
+        if st.button("Log out ↗", use_container_width=True):
+            st.session_state.user = None
+            st.session_state.page = "auth"
+            st.session_state.prediction = None
+            st.session_state.sms_input = ""
+            st.rerun()
 
     st.write("")
 
-    check_col, clear_col = st.columns([2, 1])
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
 
-    with check_col:
-        check_clicked = st.button(
-            "🛡️  Analyze Message",
+    st.markdown("### 🛡️ Analyze an SMS message")
+    st.markdown(
+        '<div class="muted">Paste a message below to classify it as Spam or Not Spam.</div>',
+        unsafe_allow_html=True
+    )
+
+    sample1, sample2, sample3 = st.columns(3)
+
+    with sample1:
+        if st.button("🎁 Prize message", use_container_width=True):
+            st.session_state.sms_input = (
+                "Congratulations! You have won a free prize. "
+                "Click here to claim now!"
+            )
+            st.session_state.prediction = None
+            st.rerun()
+
+    with sample2:
+        if st.button("🏦 Bank alert", use_container_width=True):
+            st.session_state.sms_input = (
+                "URGENT! Your bank account will be blocked. "
+                "Verify your details immediately."
+            )
+            st.session_state.prediction = None
+            st.rerun()
+
+    with sample3:
+        if st.button("👋 Normal message", use_container_width=True):
+            st.session_state.sms_input = (
+                "Hey, are we still meeting at college tomorrow?"
+            )
+            st.session_state.prediction = None
+            st.rerun()
+
+    sms = st.text_area(
+        "SMS message",
+        key="sms_input",
+        placeholder="Paste your SMS message here...",
+        max_chars=5000
+    )
+
+    count1, count2 = st.columns(2)
+
+    with count1:
+        st.metric("Characters", len(sms))
+
+    with count2:
+        st.metric("Words", len(re.findall(r"\b[\w']+\b", sms)))
+
+    analyze_col, clear_col = st.columns([2, 1])
+
+    with analyze_col:
+        analyze = st.button(
+            "🔍 Analyze Message",
             type="primary",
             use_container_width=True
         )
 
     with clear_col:
-        clear_clicked = st.button(
-            "↻  Clear",
+        clear = st.button(
+            "Clear",
             use_container_width=True
         )
 
-    if clear_clicked:
+    if clear:
         st.session_state.sms_input = ""
-        st.session_state.pop("prediction_result", None)
+        st.session_state.prediction = None
         st.rerun()
 
-    if check_clicked:
+    if analyze:
         if not sms.strip():
-            st.warning("Please enter a message before analyzing.")
+            st.warning("Please enter a message first.")
         else:
             try:
-                transformed_message = vectorizer.transform([sms])
-                prediction = str(model.predict(transformed_message)[0]).lower()
+                features = vectorizer.transform([sms])
+                prediction = str(model.predict(features)[0]).lower()
 
                 if prediction in ("spam", "1", "true"):
                     is_spam = True
@@ -516,132 +649,71 @@ with center:
                 confidence = None
 
                 if hasattr(model, "predict_proba"):
-                    probabilities = model.predict_proba(transformed_message)[0]
+                    probabilities = model.predict_proba(features)[0]
                     confidence = float(max(probabilities)) * 100
 
-                st.session_state.prediction_result = {
-                    "is_spam": is_spam,
+                st.session_state.prediction = {
+                    "spam": is_spam,
                     "confidence": confidence
                 }
 
             except Exception:
-                st.error("Unable to analyze this message. Please check the model files and try again.")
+                st.error("Could not analyze the message. Check your model files.")
 
-    result = st.session_state.get("prediction_result")
+    result = st.session_state.prediction
 
     if result:
-        if result["is_spam"]:
-            result_class = "result-spam"
-            result_icon = "🚨"
-            result_title = "Potential Spam Detected"
-            result_description = (
-                "This message has been classified as spam. "
-                "Be cautious with unknown links, requests for money, "
-                "and messages asking for personal information."
-            )
-            result_color = "#be123c"
+        if result["spam"]:
+            st.markdown("""
+            <div class="result-card spam">
+                <div style="font-size:30px">🚨</div>
+                <div class="result-title" style="color:#be123c">
+                    Potential Spam Detected
+                </div>
+                <div class="muted">
+                    Be careful with suspicious links, requests for money,
+                    and messages asking for personal information.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            result_class = "result-safe"
-            result_icon = "✅"
-            result_title = "Likely a Normal Message"
-            result_description = (
-                "This message has been classified as legitimate (ham). "
-                "However, always verify suspicious requests independently."
-            )
-            result_color = "#15803d"
-
-        st.markdown(f"""
-        <div class="result-card {result_class}">
-            <div class="result-icon">{result_icon}</div>
-            <div class="result-title" style="color:{result_color}">
-                {result_title}
-            </div>
-            <div class="result-description">
-                {result_description}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        if result["confidence"] is not None:
-            confidence = result["confidence"]
-
-            st.markdown(f"""
-            <div class="metric-card">
-                <div style="display:flex; justify-content:space-between; gap:10px;">
-                    <span style="font-weight:700;color:#172033;">
-                        Model confidence
-                    </span>
-                    <span style="font-weight:800;color:#635bff;">
-                        {confidence:.1f}%
-                    </span>
+            st.markdown("""
+            <div class="result-card safe">
+                <div style="font-size:30px">✅</div>
+                <div class="result-title" style="color:#15803d">
+                    Likely a Normal Message
                 </div>
-                <div class="confidence-track">
-                    <div class="confidence-fill"
-                         style="width:{confidence:.1f}%;">
-                    </div>
-                </div>
-                <div class="info-text">
-                    Confidence is the model's estimated probability for its
-                    predicted class, not a guarantee that the message is safe.
+                <div class="muted">
+                    The model classified this message as legitimate.
+                    This does not guarantee that it is safe.
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
+        if result["confidence"] is not None:
+            st.metric("Model confidence", f"{result['confidence']:.1f}%")
+            st.progress(min(result["confidence"] / 100, 1.0))
+
+            st.caption(
+                "Confidence is the model's estimated probability for its "
+                "predicted class, not a guarantee of safety."
+            )
+
     st.markdown('</div>', unsafe_allow_html=True)
 
-st.write("")
-st.markdown("## Built for smarter messaging")
-st.write("")
-
-info1, info2, info3 = st.columns(3)
-
-features = [
-    (
-        info1,
-        "🧠",
-        "Machine Learning",
-        "Uses a trained Naive Bayes classifier and TF-IDF text features to analyze message content."
-    ),
-    (
-        info2,
-        "⚡",
-        "Fast Results",
-        "Get an immediate classification after entering your SMS message."
-    ),
-    (
-        info3,
-        "📱",
-        "Responsive Design",
-        "The layout adapts to different screen widths for phones, tablets, and desktops."
-    )
-]
-
-for col, icon, title, description in features:
-    with col:
-        st.markdown(f"""
-        <div class="info-card">
-            <div class="info-icon">{icon}</div>
-            <div class="info-title">{title}</div>
-            <div class="info-text">{description}</div>
+    st.markdown("""
+    <div class="section-card">
+        <h3>🔐 Privacy & safety</h3>
+        <div class="muted">
+            This demo keeps account data in temporary Streamlit session state.
+            It does not intentionally save messages to a database.
+            Avoid entering passwords, OTPs, bank details, or sensitive information.
+            A message classified as normal can still be fraudulent.
         </div>
-        """, unsafe_allow_html=True)
-
-st.write("")
-
-st.markdown("""
-<div class="info-card">
-    <div class="info-title">🔐 Privacy & safety</div>
-    <div class="info-text">
-        Messages are processed to generate a prediction. This app does not
-        intentionally save submitted messages to a database. Avoid entering
-        passwords, OTPs, bank details, or other sensitive information.
-        A message classified as normal can still be fraudulent.
     </div>
-</div>
+    <div class="footer">
+        <b>SMS Shield</b> · Machine Learning College Project<br>
+        Python · Streamlit · TF-IDF · Naive Bayes
+    </div>
+    """, unsafe_allow_html=True)
 
-<div class="footer">
-    <b>SMS Shield</b> · Machine Learning Project<br>
-    Built with Python, Streamlit, TF-IDF and Naive Bayes<br>
-    Made for safer messaging 💜
-</div>
-""", unsafe_allow_html=True)
